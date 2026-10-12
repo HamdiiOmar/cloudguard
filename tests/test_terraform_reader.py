@@ -696,7 +696,7 @@ def test_mixed_providers_are_merged(tmp_path):
     result = scan(tmp_path)
     assert result.provider == "aws+azure"
     assert {c for c, _ in flagged(result)} >= {"CG-AWS-S3-002", "CG-AZ-STG-002"}
-    assert result.checks_run == 12
+    assert result.checks_run == 16
 
 
 def test_sarif_points_at_real_files(tmp_path):
@@ -733,3 +733,78 @@ def test_json_report_includes_file_and_line_only_for_iac(tmp_path, sample_invent
 
     live = json.loads(REPORTERS["json"](run_scan(sample_inventory)))
     assert "file" not in live["findings"][0]
+
+
+# ------------------------------------------------------------------------ IAM policies
+
+
+def _names(result, check_id) -> set[str]:
+    return {name for cid, name in flagged(result) if cid == check_id}
+
+
+
+def test_iam_policy_jsonencode_and_heredoc(tmp_path):
+    write(
+        tmp_path,
+        """
+        resource "aws_iam_policy" "admin" {
+          policy = jsonencode({
+            Version = "2012-10-17"
+            Statement = [{ Effect = "Allow", Action = "*", Resource = "*" }]
+          })
+        }
+
+        resource "aws_iam_role_policy" "admin_heredoc" {
+          role   = "r"
+          policy = <<POLICY
+        {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["*"],"Resource":"*"}]}
+        POLICY
+        }
+
+        resource "aws_iam_user_policy" "scoped" {
+          user   = "u"
+          policy = jsonencode({
+            Version = "2012-10-17"
+            Statement = [{ Effect = "Allow", Action = ["s3:GetObject"], Resource = "*" }]
+          })
+        }
+        """,
+    )
+    result = scan(tmp_path)
+    assert _names(result, "CG-AWS-IAM-003") == {
+        "aws_iam_policy.admin",
+        "aws_iam_role_policy.admin_heredoc",
+    }
+
+
+def test_iam_policy_with_references_keeps_literal_parts(tmp_path):
+    write(
+        tmp_path,
+        """
+        resource "aws_iam_policy" "p" {
+          policy = jsonencode({
+            Version = "2012-10-17"
+            Statement = [{ Effect = "Allow", Action = "*", Resource = aws_s3_bucket.b.arn }]
+          })
+        }
+        """,
+    )
+    # The resource is a reference (unknown), so the wildcard-resource check must not fire.
+    assert _names(scan(tmp_path), "CG-AWS-IAM-003") == set()
+
+
+def test_unreadable_iam_policy_is_skipped_with_a_warning(tmp_path):
+    write(
+        tmp_path,
+        """
+        resource "aws_iam_policy" "dyn" {
+          policy = data.aws_iam_policy_document.doc.json
+        }
+        resource "aws_s3_bucket" "b" {
+          bucket = "x"
+        }
+        """,
+    )
+    result = scan(tmp_path)
+    assert _names(result, "CG-AWS-IAM-003") == set()
+    assert any("aws_iam_policy.dyn" in w for w in result.warnings)

@@ -89,3 +89,34 @@ resource "aws_security_group_rule" "web_rdp" {
   protocol          = "tcp"
   cidr_blocks       = ["0.0.0.0/0"]
 }
+
+# A "temporary" admin policy that never got removed.
+resource "aws_iam_policy" "ops_admin" {
+  name = "ops-admin"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "*"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Scoped correctly: this one must NOT be reported.
+resource "aws_iam_role_policy" "reader" {
+  name = "read-logs"
+  role = "app"
+
+  policy = <<POLICY
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": ["logs:GetLogEvents"], "Resource": "*" }
+  ]
+}
+POLICY
+}

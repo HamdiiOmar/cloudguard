@@ -16,7 +16,7 @@ It can scan three kinds of input with the same checks:
 | **A live AWS account** | `cloudguard scan --provider aws` | Yes (read-only) |
 | **A live Azure subscription** | `cloudguard scan --provider azure --subscription-id ...` | Yes (Reader) |
 
-> Status: early alpha (v0.1). 12 checks (6 Azure, 6 AWS). See the [roadmap](#roadmap).
+> Status: early alpha (v0.1). 16 checks (6 Azure, 10 AWS). See the [roadmap](#roadmap).
 
 ### How it is tested
 
@@ -85,7 +85,7 @@ Each finding carries the file and line of the `resource` block, for example
 
 | Cloud | Resources read |
 |-------|----------------|
-| AWS | `aws_s3_bucket` (+ `_public_access_block`, `_acl`, `_versioning`, account-level block), `aws_security_group` (+ `aws_security_group_rule`, `aws_vpc_security_group_ingress_rule`) |
+| AWS | `aws_s3_bucket` (+ `_public_access_block`, `_acl`, `_versioning`, account-level block), `aws_security_group` (+ `aws_security_group_rule`, `aws_vpc_security_group_ingress_rule`), IAM policies (`aws_iam_policy`, `aws_iam_role_policy`, `aws_iam_user_policy`, `aws_iam_group_policy`; JSON heredoc or `jsonencode()` of literals) |
 | Azure | `azurerm_storage_account` (+ `azurerm_storage_account_network_rules`), `azurerm_network_security_group` (+ `azurerm_network_security_rule`) |
 
 Try it on an intentionally vulnerable public project:
@@ -118,8 +118,8 @@ cloudguard scan --provider aws --region eu-west-1
 cloudguard scan --provider aws --all-regions --profile my-profile
 ```
 
-Credentials come from the standard boto3 chain. Use read-only permissions (for example the
-`SecurityAudit` managed policy). If a setting cannot be read (AccessDenied), CloudGuard
+Credentials come from the standard boto3 chain. Use read-only permissions (the
+`SecurityAudit` managed policy covers every call, including the IAM ones). If a setting cannot be read (AccessDenied), CloudGuard
 records a warning and skips that resource instead of reporting a false finding.
 
 ### Scan a real Azure subscription
@@ -176,6 +176,10 @@ docker run --rm -v "$PWD/examples:/data" cloudguard scan --iac /data/terraform
 | CG-AWS-EC2-001 | high | 5.2, 5.3 | T1021.004, T1133 | Security group allows SSH (22) from 0.0.0.0/0 or ::/0 |
 | CG-AWS-EC2-002 | high | 5.2, 5.3 | T1021.001, T1133 | Security group allows RDP (3389) from 0.0.0.0/0 or ::/0 |
 | CG-AWS-EC2-003 | critical | 5.2, 5.3 | T1190, T1133 | Security group allows all traffic from the Internet |
+| CG-AWS-IAM-001 | critical | 1.4 | T1078.004 | Root account has active access keys (live only) |
+| CG-AWS-IAM-002 | high | 1.10 | T1078.004 | IAM user with console access has no MFA (live only) |
+| CG-AWS-IAM-003 | high | 1.16 | T1078.004 | IAM policy allows `Action: *` on `Resource: *` |
+| CG-AWS-IAM-004 | medium | 1.14 | T1078.004 | Active access key older than 90 days (live only) |
 
 > The CIS control numbers were written from memory of each benchmark and **must be verified**
 > against the exact benchmark version you audit against, since numbering changes between
@@ -190,6 +194,10 @@ docker run --rm -v "$PWD/examples:/data" cloudguard scan --iac /data/terraform
   rules at all means the documented default, which allows all networks.
 - AWS S3 checks evaluate bucket-level settings (plus the account-level Block Public Access
   resource in Terraform). Bucket policies are not modelled yet.
+- IAM: live scans read customer-managed policies only (inline policies, permission boundaries
+  and SCPs are not modelled). Root keys, MFA and key age cannot be seen in Terraform, so those
+  three checks run on live accounts and snapshots only. `data.aws_iam_policy_document` is not
+  evaluated, and a policy that is not a literal is skipped with a warning.
 - AWS security group checks treat only `0.0.0.0/0` and `::/0` as the Internet; other
   security groups and prefix lists are not followed.
 
@@ -264,9 +272,10 @@ ruff check .
 
 - [x] AWS provider (S3, security groups), tested against moto
 - [x] Terraform scanning with file and line numbers
+- [x] AWS IAM checks (root keys, MFA, wildcard policies, key rotation)
 - [ ] Verify SARIF upload to GitHub code scanning
 - [ ] Validate the Azure collector against a live subscription
-- [ ] More checks: IAM (root keys, MFA, wildcard policies), CloudTrail, Key Vault, SQL, Azure RBAC
+- [ ] More checks: CloudTrail, root MFA, Key Vault, SQL, Azure RBAC
 - [ ] Terraform modules and variable defaults
 - [ ] HTML report
 - [ ] Auto-remediation mode (opt-in, dry-run by default)

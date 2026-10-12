@@ -10,6 +10,7 @@ a fake account that contains a few deliberate misconfigurations.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -104,11 +105,26 @@ def main() -> None:
             ],
         )
 
+        # IAM: an over-broad policy and a console user without MFA.
+        iam = boto3.client("iam", region_name=REGION)
+        iam.create_policy(
+            PolicyName="ops-temporary-admin",
+            PolicyDocument=json.dumps(
+                {
+                    "Version": "2012-10-17",
+                    "Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}],
+                }
+            ),
+        )
+        iam.create_user(UserName="alice")
+        iam.create_login_profile(UserName="alice", Password="Demo-Password-123!")
+
         inventory = collect(regions=[REGION])
 
     inventory.save(OUTPUT)
     print(f"Wrote {OUTPUT} ({len(inventory.get('s3_buckets'))} buckets, "
-          f"{len(inventory.get('security_groups'))} security groups)")
+          f"{len(inventory.get('security_groups'))} security groups, "
+          f"{len(inventory.get('iam_users'))} IAM users)")
 
 
 if __name__ == "__main__":

@@ -171,3 +171,73 @@ def test_unreadable_setting_becomes_warning_not_false_finding(aws, monkeypatch):
     result = run_scan(inventory)
     assert "CG-AWS-S3-002" not in {f.check_id for f in result.findings}
     assert result.warnings == inventory.warnings
+
+
+# ------------------------------------------------------------------------------ IAM
+
+
+@pytest.fixture
+def aws_iam(aws):
+    iam = boto3.client("iam", region_name=REGION)
+    admin = {
+        "Version": "2012-10-17",
+        "Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}],
+    }
+    scoped = {
+        "Version": "2012-10-17",
+        "Statement": [{"Effect": "Allow", "Action": "s3:GetObject", "Resource": "*"}],
+    }
+    import json
+
+    iam.create_policy(PolicyName="cg-admin", PolicyDocument=json.dumps(admin))
+    iam.create_policy(PolicyName="cg-scoped", PolicyDocument=json.dumps(scoped))
+
+    iam.create_user(UserName="no-mfa")
+    iam.create_login_profile(UserName="no-mfa", Password="Sup3r-Secret-pw!")
+    iam.create_access_key(UserName="no-mfa")
+
+    iam.create_user(UserName="with-mfa")
+    iam.create_login_profile(UserName="with-mfa", Password="Sup3r-Secret-pw!")
+    device = iam.create_virtual_mfa_device(VirtualMFADeviceName="cg-mfa")["VirtualMFADevice"]
+    iam.enable_mfa_device(
+        UserName="with-mfa",
+        SerialNumber=device["SerialNumber"],
+        AuthenticationCode1="123456",
+        AuthenticationCode2="654321",
+    )
+
+    iam.create_user(UserName="service-bot")
+    yield iam
+
+
+def test_collect_iam_shape(aws_iam):
+    inventory = collect(regions=[REGION])
+    assert inventory.warnings == []
+
+    users = {u["name"]: u for u in inventory.get("iam_users")}
+    assert users["no-mfa"]["console_access"] is True
+    assert users["no-mfa"]["mfa_enabled"] is False
+    assert users["with-mfa"]["mfa_enabled"] is True
+    assert users["service-bot"]["console_access"] is False
+    key = users["no-mfa"]["access_keys"][0]
+    assert key["status"] == "Active" and key["created"]
+
+    policies = {p["name"]: p for p in inventory.get("iam_policies")}
+    assert set(policies) == {"cg-admin", "cg-scoped"}
+    assert policies["cg-admin"]["document"]["Statement"][0]["Action"] == "*"
+
+    (account,) = inventory.get("iam_account")
+    assert account["root_access_keys_present"] == 0
+
+
+def test_iam_scan_flags_only_the_planted_problems(aws_iam):
+    result = run_scan(collect(regions=[REGION]))
+    assert result.errors == []
+
+    def names(check_id):
+        return {f.resource_name for f in result.findings if f.check_id == check_id}
+
+    assert names("CG-AWS-IAM-002") == {"no-mfa"}
+    assert names("CG-AWS-IAM-003") == {"cg-admin"}
+    assert names("CG-AWS-IAM-001") == set()  # moto's root has no keys
+    assert names("CG-AWS-IAM-004") == set()  # keys were just created

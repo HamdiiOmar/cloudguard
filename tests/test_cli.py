@@ -31,7 +31,7 @@ def test_scan_terraform_example(capsys):
     assert code == EXIT_FINDINGS
     out = capsys.readouterr().out
     assert "aws+azure" in out
-    assert "Findings: 13" in out
+    assert "Findings: 14" in out
     assert "at aws.tf:8" in out
 
 

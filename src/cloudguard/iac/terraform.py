@@ -15,17 +15,21 @@ Design rules:
 
 Supported resources:
   AWS    aws_s3_bucket (+ _public_access_block, _acl, _versioning, account-level block),
-         aws_security_group (+ aws_security_group_rule, aws_vpc_security_group_ingress_rule)
+         aws_security_group (+ aws_security_group_rule, aws_vpc_security_group_ingress_rule),
+         aws_iam_policy, aws_iam_role_policy, aws_iam_user_policy, aws_iam_group_policy
+         (policy as a JSON heredoc, or jsonencode() of literal values)
   Azure  azurerm_storage_account (+ azurerm_storage_account_network_rules),
          azurerm_network_security_group (+ azurerm_network_security_rule)
 
-Known limitations: modules are not followed (a warning names each one), ``dynamic`` blocks,
+Known limitations: ``data.aws_iam_policy_document`` is not evaluated, modules are not
+followed (a warning names each one), ``dynamic`` blocks,
 ``count`` and ``for_each`` are not expanded, variables are not resolved, and ``.tf.json``
 files are not read. Line numbers point at the ``resource`` block header.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from collections import defaultdict
 from dataclasses import dataclass
@@ -37,6 +41,10 @@ from cloudguard.models import Inventory
 SUPPORTED_TYPES = (
     "aws_s3_bucket",
     "aws_security_group",
+    "aws_iam_policy",
+    "aws_iam_role_policy",
+    "aws_iam_user_policy",
+    "aws_iam_group_policy",
     "azurerm_storage_account",
     "azurerm_network_security_group",
 )
@@ -281,6 +289,87 @@ def _group_item(res: _Resource, ingress: list[dict]) -> dict[str, Any]:
     }
 
 
+_IAM_POLICY_TYPES = (
+    "aws_iam_policy",
+    "aws_iam_role_policy",
+    "aws_iam_user_policy",
+    "aws_iam_group_policy",
+)
+_HEREDOC = re.compile(r"^<<-?\s*(\w+)\n(.*)\n\s*\1\s*$", re.DOTALL)
+_JSONENCODE = re.compile(r"^\$\{\s*jsonencode\((.*)\)\s*\}$", re.DOTALL)
+_BARE = re.compile(r"[A-Za-z_][\w.\-\[\]*]*")
+
+
+def _hcl_object_to_json(text: str) -> str:
+    """Convert the literal part of an HCL object expression to JSON text.
+
+    ``key = value`` becomes ``"key": value`` (outside strings only) and a bare reference such
+    as ``aws_s3_bucket.x.arn`` becomes the string "<unknown>". Anything more exotic (function
+    calls, conditionals, interpolation) makes ``json.loads`` fail, which the caller treats as
+    unknown.
+    """
+    out: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            out.append(text[i : j + 1])
+            i = j + 1
+        elif ch == "=" and text[i : i + 2] != "==":
+            out.append(":")
+            i += 1
+        elif ch.isalpha() or ch == "_":
+            m = _BARE.match(text, i)
+            word = m.group(0)
+            i = m.end()
+            rest = text[i:].lstrip()
+            if rest.startswith("=") and not rest.startswith("=="):
+                out.append(json.dumps(word))  # object key
+            elif word in ("true", "false", "null"):
+                out.append(word)
+            else:
+                out.append('"<unknown>"')
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
+def _policy_document(value: Any) -> Any:
+    """The parsed policy JSON, or _UNKNOWN when it is not a readable literal."""
+    if not isinstance(value, str):
+        return _UNKNOWN
+    text = value.strip()
+    try:
+        heredoc = _HEREDOC.match(text)
+        if heredoc:
+            return json.loads(heredoc.group(2))
+        encoded = _JSONENCODE.match(text)
+        if encoded:
+            return json.loads(_hcl_object_to_json(encoded.group(1)))
+        if not _is_expr(text):
+            return json.loads(text)
+    except ValueError:
+        pass
+    return _UNKNOWN
+
+
+def _iam_policies(resources: list[_Resource], warnings: list[str]) -> list[dict]:
+    items = []
+    for res in (r for r in resources if r.type in _IAM_POLICY_TYPES):
+        document = _policy_document(res.body.get("policy"))
+        if document is _UNKNOWN:
+            warnings.append(f"{res.ident}: policy is not a literal JSON document; skipped")
+            continue
+        items.append(
+            {"id": res.ident, "name": res.ident, "document": document, "_source": res.source}
+        )
+    return items
+
+
 # --------------------------------------------------------------------- Azure
 
 
@@ -486,12 +575,13 @@ def load_inventories(path: str | Path) -> list[Inventory]:
     for res in all_resources:
         by_directory[res.directory].append(res)
 
-    aws: dict[str, list] = {"s3_buckets": [], "security_groups": []}
+    aws: dict[str, list] = {"s3_buckets": [], "security_groups": [], "iam_policies": []}
     azure: dict[str, list] = {"storage_accounts": [], "network_security_groups": []}
     for directory in sorted(by_directory):
         group = by_directory[directory]
         aws["s3_buckets"] += _s3_buckets(group, account_bpa)
         aws["security_groups"] += _security_groups(group)
+        aws["iam_policies"] += _iam_policies(group, warnings)
         azure["storage_accounts"] += _storage_accounts(group)
         azure["network_security_groups"] += _network_security_groups(group)
 
