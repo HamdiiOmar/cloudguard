@@ -1,0 +1,115 @@
+{
+  "provider": "aws",
+  "scope": "123456789012",
+  "warnings": [],
+  "resources": {
+    "s3_buckets": [
+      {
+        "id": "arn:aws:s3:::acme-marketing-assets",
+        "name": "acme-marketing-assets",
+        "public_access_block": null,
+        "acl_grants": [
+          {
+            "grantee_uri": "http://acs.amazonaws.com/groups/global/AllUsers",
+            "permission": "READ"
+          }
+        ],
+        "versioning": "Disabled"
+      },
+      {
+        "id": "arn:aws:s3:::acme-customer-data",
+        "name": "acme-customer-data",
+        "public_access_block": {
+          "block_public_acls": true,
+          "ignore_public_acls": true,
+          "block_public_policy": true,
+          "restrict_public_buckets": true
+        },
+        "acl_grants": [],
+        "versioning": "Enabled"
+      }
+    ],
+    "security_groups": [
+      {
+        "id": "arn:aws:ec2:eu-west-1:123456789012:security-group/sg-8372f927f8ca94ba8",
+        "group_id": "sg-8372f927f8ca94ba8",
+        "name": "default (sg-8372f927f8ca94ba8)",
+        "region": "eu-west-1",
+        "vpc_id": "vpc-163c41d1c62fb70a3",
+        "ingress": []
+      },
+      {
+        "id": "arn:aws:ec2:eu-west-1:123456789012:security-group/sg-011e14b3878bc3331",
+        "group_id": "sg-011e14b3878bc3331",
+        "name": "bastion (sg-011e14b3878bc3331)",
+        "region": "eu-west-1",
+        "vpc_id": "vpc-163c41d1c62fb70a3",
+        "ingress": [
+          {
+            "protocol": "tcp",
+            "from_port": 22,
+            "to_port": 22,
+            "ipv4_ranges": [
+              "0.0.0.0/0"
+            ],
+            "ipv6_ranges": []
+          },
+          {
+            "protocol": "tcp",
+            "from_port": 3389,
+            "to_port": 3389,
+            "ipv4_ranges": [],
+            "ipv6_ranges": [
+              "::/0"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "arn:aws:ec2:eu-west-1:123456789012:security-group/sg-bdf28b8e5bf69c121",
+        "group_id": "sg-bdf28b8e5bf69c121",
+        "name": "temp-debug (sg-bdf28b8e5bf69c121)",
+        "region": "eu-west-1",
+        "vpc_id": "vpc-163c41d1c62fb70a3",
+        "ingress": [
+          {
+            "protocol": "-1",
+            "from_port": null,
+            "to_port": null,
+            "ipv4_ranges": [
+              "0.0.0.0/0"
+            ],
+            "ipv6_ranges": []
+          }
+        ]
+      },
+      {
+        "id": "arn:aws:ec2:eu-west-1:123456789012:security-group/sg-2e2d71d2f6588b5da",
+        "group_id": "sg-2e2d71d2f6588b5da",
+        "name": "web-tier (sg-2e2d71d2f6588b5da)",
+        "region": "eu-west-1",
+        "vpc_id": "vpc-163c41d1c62fb70a3",
+        "ingress": [
+          {
+            "protocol": "tcp",
+            "from_port": 443,
+            "to_port": 443,
+            "ipv4_ranges": [
+              "0.0.0.0/0"
+            ],
+            "ipv6_ranges": []
+          },
+          {
+            "protocol": "tcp",
+            "from_port": 22,
+            "to_port": 22,
+            "ipv4_ranges": [
+              "10.0.0.0/16"
+            ],
+            "ipv6_ranges": []
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "provider": "azure",
+  "scope": "00000000-0000-0000-0000-000000000000",
+  "resources": {
+    "storage_accounts": [
+      {
+        "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-prod/providers/Microsoft.Storage/storageAccounts/stproddata001",
+        "name": "stproddata001",
+        "location": "westeurope",
+        "allow_blob_public_access": true,
+        "enable_https_traffic_only": true,
+        "minimum_tls_version": "TLS1_0",
+        "network_rule_set": { "default_action": "Allow" }
+      },
+      {
+        "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-prod/providers/Microsoft.Storage/storageAccounts/stlogsecure01",
+        "name": "stlogsecure01",
+        "location": "westeurope",
+        "allow_blob_public_access": false,
+        "enable_https_traffic_only": true,
+        "minimum_tls_version": "TLS1_2",
+        "network_rule_set": { "default_action": "Deny" }
+      },
+      {
+        "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-legacy/providers/Microsoft.Storage/storageAccounts/stlegacyhttp",
+        "name": "stlegacyhttp",
+        "location": "francecentral",
+        "allow_blob_public_access": false,
+        "enable_https_traffic_only": false,
+        "minimum_tls_version": "TLS1_2",
+        "network_rule_set": { "default_action": "Deny" }
+      }
+    ],
+    "network_security_groups": [
+      {
+        "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-prod/providers/Microsoft.Network/networkSecurityGroups/nsg-web-prod",
+        "name": "nsg-web-prod",
+        "location": "westeurope",
+        "security_rules": [
+          {
+            "name": "allow-rdp-any",
+            "priority": 100,
+            "direction": "Inbound",
+            "access": "Allow",
+            "protocol": "Tcp",
+            "source_address_prefix": "*",
+            "destination_port_range": "3389"
+          },
+          {
+            "name": "allow-ssh-internet",
+            "priority": 110,
+            "direction": "Inbound",
+            "access": "Allow",
+            "protocol": "*",
+            "source_address_prefix": "Internet",
+            "destination_port_ranges": ["22", "8080"]
+          },
+          {
+            "name": "allow-https",
+            "priority": 120,
+            "direction": "Inbound",
+            "access": "Allow",
+            "protocol": "Tcp",
+            "source_address_prefix": "*",
+            "destination_port_range": "443"
+          }
+        ]
+      },
+      {
+        "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-prod/providers/Microsoft.Network/networkSecurityGroups/nsg-app-internal",
+        "name": "nsg-app-internal",
+        "location": "westeurope",
+        "security_rules": [
+          {
+            "name": "deny-rdp-internet",
+            "priority": 150,
+            "direction": "Inbound",
+            "access": "Deny",
+            "protocol": "Tcp",
+            "source_address_prefix": "*",
+            "destination_port_range": "3389"
+          },
+          {
+            "name": "allow-rdp-any-shadowed",
+            "priority": 200,
+            "direction": "Inbound",
+            "access": "Allow",
+            "protocol": "Tcp",
+            "source_address_prefix": "*",
+            "destination_port_range": "3389"
+          },
+          {
+            "name": "allow-ssh-from-vnet",
+            "priority": 300,
+            "direction": "Inbound",
+            "access": "Allow",
+            "protocol": "Tcp",
+            "source_address_prefix": "10.0.0.0/24",
+            "destination_port_range": "22"
+          }
+        ]
+      }
+    ]
+  }
+}

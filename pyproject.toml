@@ -1,0 +1,60 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cloudguard-cspm"
+dynamic = ["version"]
+description = "Multi-cloud (Azure, AWS) security posture scanner: CIS-mapped checks, MITRE ATT&CK tags, SARIF output."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Omar Hamdi" }]
+keywords = ["cloud-security", "cspm", "azure", "cis-benchmark", "mitre-attack", "sarif", "devsecops"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+]
+dependencies = []
+
+[project.optional-dependencies]
+azure = [
+    "azure-identity>=1.15",
+    "azure-mgmt-storage>=21.0",
+    "azure-mgmt-network>=25.0",
+]
+aws = [
+    "boto3>=1.34",
+]
+iac = [
+    "python-hcl2>=8.1",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "boto3>=1.34",
+    "moto[s3,ec2,sts]>=5.0",
+    "python-hcl2>=8.1",
+]
+
+[project.scripts]
+cloudguard = "cloudguard.cli:main"
+
+[tool.hatch.version]
+path = "src/cloudguard/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cloudguard"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
